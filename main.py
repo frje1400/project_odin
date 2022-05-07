@@ -1,4 +1,5 @@
 import sys
+from enum import Enum, auto
 
 import dotenv
 import logging
@@ -95,28 +96,46 @@ class App:
         result = tx.run(query, person_name=person_name)
         return [row["name"] for row in result]
 
-    def run_query(self, query: str):
-        # the 'with' syntax is a so-called "context manager", meaning that it automatically handles
-        # setup and teardown of some resource. In this case, the session
-        with self.driver.session() as session:
-            # Simple sessions provide a "classic" blocking style API for Cypher execution.
-            # In general, simple sessions provide the easiest programming style to work with
-            # since API calls are executed in a strictly sequential fashion.
-            # https://neo4j.com/docs/python-manual/current/session-api/
-            result = session.read_transaction(lambda tx: tx.run(query))
-            return result
 
-    def query_loop(self):
-        while True:
-            print('Enter a query: ')
-            query = input('> ')
-            print(f"query is: {query}")
-            if query in {'quit', 'quit()', 'q', 'exit', 'exit()'}:
-                break
-            else:
-                result = self.run_query(query)
-                for row in result:
-                    print(row)
+class CLIState(Enum):
+    QUIT = auto()
+    BASIC = auto()
+    ADVANCED = auto()
+
+
+class CommandLine:
+    def __init__(self, app: App):
+        self.app = app
+        self.state = CLIState.BASIC
+
+    def run(self):
+        while self.state != CLIState.QUIT:
+            if self.state == CLIState.BASIC:
+                user_input = input('<basic> ')
+                if user_input == '!q':
+                    self.state = CLIState.QUIT
+                elif user_input == '!adv':
+                    self.state = CLIState.ADVANCED
+                else:
+                    # Handle the "normal mode" commands.
+                    print(f'{user_input}')
+            elif self.state == CLIState.ADVANCED:
+                user_input = input('<advanced> ')
+                #  Is it possible to check that the user has entered a valid Cypher
+                #  query before sending it to the database?
+                if user_input == '!q':
+                    self.state = CLIState.QUIT
+                elif user_input == '!basic':
+                    self.state = CLIState.BASIC
+                elif self.valid_query(user_input):
+                    # contact database.
+                    print(f'advanced query: {user_input}')
+                else:
+                    print(f'invalid query: {user_input}')
+
+    def valid_query(self, query: str):
+        """Validate that you have correct syntax on the Cypher query."""
+        return True
 
 
 if __name__ == "__main__":
@@ -133,9 +152,9 @@ if __name__ == "__main__":
     App.enable_log(logging.INFO, sys.stdout)
     app = App(uri, user, password)
     # app.create_friendship("Alice", "David")
-    app.find_person("Alice")
+    # app.find_person("Alice")
     # app.find_person("Bob")
-
-    app.query_loop()
+    cli = CommandLine(app)
+    cli.run()
 
     app.close()
