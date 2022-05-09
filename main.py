@@ -5,8 +5,8 @@ import dotenv
 import logging
 import os
 
-from neo4j import GraphDatabase
-from neo4j.exceptions import ServiceUnavailable
+from neo4j import GraphDatabase, Query
+from neo4j.exceptions import ServiceUnavailable, CypherSyntaxError
 
 
 class App:
@@ -96,6 +96,19 @@ class App:
         result = tx.run(query, person_name=person_name)
         return [row["name"] for row in result]
 
+    def run_advanced_mode_query(self, query):
+        with self.driver.session() as session:
+            # An auto-commit transaction is a basic but limited form of transaction.
+            # Such a transaction consists of only one Cypher query and is not automatically
+            # retried on failure. Therefore, any error scenarios will need to be handled by
+            # the client application itself.
+            #
+            # Auto-commit transactions serve the following purposes:
+            #   simple use cases such as when learning Cypher or writing one-off scripts.
+            res = session.run(Query(query))
+            for r in res:
+                print(r)
+
 
 class CLIState(Enum):
     QUIT = auto()
@@ -121,21 +134,15 @@ class CommandLine:
                     print(f'{user_input}')
             elif self.state == CLIState.ADVANCED:
                 user_input = input('<advanced> ')
-                #  Is it possible to check that the user has entered a valid Cypher
-                #  query before sending it to the database?
                 if user_input == '!q':
                     self.state = CLIState.QUIT
                 elif user_input == '!basic':
                     self.state = CLIState.BASIC
-                elif self.valid_query(user_input):
-                    # contact database.
-                    print(f'advanced query: {user_input}')
                 else:
-                    print(f'invalid query: {user_input}')
-
-    def valid_query(self, query: str):
-        """Validate that you have correct syntax on the Cypher query."""
-        return True
+                    try:
+                        app.run_advanced_mode_query(user_input)
+                    except CypherSyntaxError:
+                        print(f"invalid query: {user_input}")
 
 
 if __name__ == "__main__":
@@ -152,8 +159,7 @@ if __name__ == "__main__":
     App.enable_log(logging.INFO, sys.stdout)
     app = App(uri, user, password)
     # app.create_friendship("Alice", "David")
-    # app.find_person("Alice")
-    # app.find_person("Bob")
+    app.find_person("Alice")
     cli = CommandLine(app)
     cli.run()
 
