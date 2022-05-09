@@ -10,4 +10,4 @@ Meddelande till Jim: man kan använda requirements.txt för att automatiskt läs
 |-------------|-------------|-------------|
 | !q          | all         | exit the application. |
 | !basic      | all         | enter basic mode |
-| !advanced   | all         | enter advanced mode |
+| !adv        | all         | enter advanced mode |
