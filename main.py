@@ -1,5 +1,6 @@
 import sys
 from enum import Enum, auto
+from datetime import datetime
 
 import dotenv
 import logging
@@ -67,6 +68,40 @@ class App:
                 query=query, exception=exception))
             raise
 
+    @staticmethod
+    def get_datetime(unix_time):
+        return datetime.utcfromtimestamp(unix_time).strftime('%Y-%m-%d %H:%M:%S')
+
+    def find_outgoing_contacts(self, contacting, contacted):
+        with self.driver.session() as session:
+            # Write transactions allow the driver to handle retries and transient errors
+            print("Contacting              Contacted                  Start time                End time")
+            print("------------------------------------------------------------------------------------------------")
+            result = session.read_transaction(
+                self.find_and_return_outgoing_contacts, contacting, contacted)
+            for row in result:
+                print("{p1}         {p2}            {rstart}       {rend}".format(
+                    p1=row['p1'], p2=row['p2'],
+                    rstart=self.get_datetime(row['r.start']),
+                    rend=self.get_datetime(row['r.end'])
+                ))
+
+    @staticmethod
+    def find_and_return_outgoing_contacts(tx, contacting, contacted):
+        query = (
+            "MATCH (p1:POI { name: $contacting})-[r]->(p2:POI {name: $contacted})"
+            "RETURN p1, p2, r"
+        )
+        result = tx.run(query, contacting=contacting, contacted=contacted)
+        try:
+            return [{"p1": row["p1"]["name"], "p2": row["p2"]["name"], "r.start": row["r"]["start"],
+                     "r.end": row["r"]["end"]}
+                    for row in result]
+        except ServiceUnavailable as exception:
+            logging.error("{query} raised an error: \n {exception".format(
+                query=query, exception=exception))
+            raise
+
     def find_person(self, person_name):
         with self.driver.session() as session:
             # Routing Cypher by identifying reads and writes can improve the utilization of available
@@ -94,6 +129,30 @@ class App:
             "RETURN p.name AS name"
         )
         result = tx.run(query, person_name=person_name)
+        return [row["name"] for row in result]
+
+    @staticmethod
+    def _add_relationship(relationship, contacting, contacted):
+        if relationship == 'called':
+            rel = relationship
+        elif relationship == 'texted':
+            rel = relationship
+        else:
+            return ""
+
+    def create_poi(self, name):
+        with self.driver.session() as session:
+            result = session.write_transaction(self._create_and_return_poi, name)
+            for row in result:
+                print("Created POI: {row}".format(row=row))
+
+    @staticmethod
+    def _create_and_return_poi(tx, name):
+        query = (
+            "CREATE (p:POI {name: '" + name + "' })"
+            "RETURN p.name AS name"
+        )
+        result = tx.run(query, name=name)
         return [row["name"] for row in result]
 
     def run_advanced_mode_query(self, query):
@@ -159,7 +218,9 @@ if __name__ == "__main__":
     App.enable_log(logging.INFO, sys.stdout)
     app = App(uri, user, password)
     # app.create_friendship("Alice", "David")
-    app.find_person("Alice")
+    # app.find_person("Alice")
+    app.find_outgoing_contacts('Petter Nordblom', 'Stefan Karlsson')
+    app.create_poi('Thorild Sten')
     cli = CommandLine(app)
     cli.run()
 
