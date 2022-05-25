@@ -2,9 +2,12 @@ import sys
 from enum import Enum, auto
 from datetime import datetime
 
+import datetime
 import dotenv
 import logging
 import os
+import re
+import time
 
 from neo4j import GraphDatabase, Query
 from neo4j.exceptions import ServiceUnavailable, CypherSyntaxError
@@ -72,6 +75,21 @@ class App:
     def get_datetime(unix_time):
         return datetime.utcfromtimestamp(unix_time).strftime('%Y-%m-%d %H:%M:%S')
 
+    @staticmethod
+    def get_unixtime(date_time):
+        print(date_time)
+        dt_split = re.split("[-_:]", date_time)
+        print(dt_split)
+        year = int(dt_split[0])
+        month = int(dt_split[1])
+        day = int(dt_split[2])
+        hour = int(dt_split[3])
+        minute = int(dt_split[4])
+
+        dt = datetime.datetime(year, month, day, hour, minute)
+        unixtime = time.mktime(dt.timetuple())
+        return str(int(unixtime))
+
     def find_outgoing_contacts(self, contacting, contacted):
         with self.driver.session() as session:
             # Write transactions allow the driver to handle retries and transient errors
@@ -131,14 +149,35 @@ class App:
         result = tx.run(query, person_name=person_name)
         return [row["name"] for row in result]
 
+    def add_ci(self, relationship, contacting, contacted, start, end):
+        start = App.get_unixtime(start)
+        end = App.get_unixtime(end)
+        rel = relationship.upper()
+        with self.driver.session() as session:
+            result = session.write_transaction(self._add_ci, rel, contacting, contacted, start, end)
+            for row in result:
+                print("Added relationship: ({contacting})-[:{rel} start: {rstart}, end: {rend}]->({contacted})".format(
+                    contacting=row['contacting'],
+                    rel=rel,
+                    contacted=row['contacted'],
+                    rstart=row['ci.start'],
+                    rend=row['ci.end']
+                ))
+
     @staticmethod
-    def _add_relationship(relationship, contacting, contacted):
-        if relationship == 'called':
-            rel = relationship
-        elif relationship == 'texted':
-            rel = relationship
-        else:
-            return ""
+    def _add_ci(tx, relationship, contacting, contacted, start, end):
+        query = (
+            "MATCH (contacting:POI {name: '" + contacting + "' }) "
+            "MATCH (contacted:POI {name: '" + contacted + "'}) "
+            "MERGE (contacting)-[ci:" + relationship + " {start: " + start + ", end: " + end + "}]->(contacted) "
+            "RETURN contacting, contacted, ci"
+        )
+        result = tx.run(query, contacting=contacting, contacted=contacted, relationship=relationship, start=start,
+                        end=end)
+
+        return [{"contacting": row["contacting"]["name"], "contacted": row["contacted"]["name"],
+                 "ci.start": row["ci"]["start"], "ci.end": row["ci"]["end"]}
+                for row in result]
 
     def create_poi(self, name):
         with self.driver.session() as session:
@@ -208,6 +247,8 @@ class CommandLine:
                     self.direct_channels(user_input)
                 elif user_input.startswith('!channels_date '):
                     self.channels_date(user_input)
+                elif user_input.startswith('!add_poi'):
+                    self.add_poi(user_input)
                 else:
                     print(f'unknown command: {user_input}')
             elif self.state == CLIState.ADVANCED:
@@ -264,8 +305,9 @@ class CommandLine:
     @staticmethod
     def add_channel(user_input):
         # 1.7 The operator can add a new CI between two existing POIs.
-        poi1, poi2, channel = user_input.split(' ')[1:]
-        print(f'adding {channel} between {poi1} and {poi2}')
+        poi1, channel, poi2, start, end = user_input.split(' ')[1:]
+        print(f'adding {channel} between {poi1} and {poi2} with start time {start} and end time {end}')
+        app.add_ci(channel, poi1, poi2, start, end)
 
     @staticmethod
     def direct_channels(user_input):
@@ -278,6 +320,12 @@ class CommandLine:
         # 1.9 The operator can get all CIs between two points of datetime.
         date1, date2 = user_input.split(' ')[1:]
         print(f'finding channels between {date1} and {date2}')
+
+    @staticmethod
+    def add_poi(user_input):
+        name = user_input.split(' ')[1:]
+        print(f'adding poi {name}')
+        app.create_poi(name[0])
 
 
 if __name__ == "__main__":
