@@ -2,7 +2,6 @@ import sys
 from enum import Enum, auto
 from datetime import datetime
 
-import datetime
 import dotenv
 import logging
 import os
@@ -90,13 +89,13 @@ class App:
         unixtime = time.mktime(dt.timetuple())
         return str(int(unixtime))
 
-    def find_outgoing_contacts(self, contacting, contacted):
+    def find_outgoing_contacts_between_x_and_y(self, contacting, contacted):
         with self.driver.session() as session:
             # Write transactions allow the driver to handle retries and transient errors
             print("Contacting              Contacted                  Start time                End time")
             print("------------------------------------------------------------------------------------------------")
             result = session.read_transaction(
-                self.find_and_return_outgoing_contacts, contacting, contacted)
+                self._find_outgoing_contacts_between_x_and_y, contacting, contacted)
             for row in result:
                 print("{p1}         {p2}            {rstart}       {rend}".format(
                     p1=row['p1'], p2=row['p2'],
@@ -105,7 +104,7 @@ class App:
                 ))
 
     @staticmethod
-    def find_and_return_outgoing_contacts(tx, contacting, contacted):
+    def _find_outgoing_contacts_between_x_and_y(tx, contacting, contacted):
         query = (
             "MATCH (p1:POI { name: $contacting})-[r]->(p2:POI {name: $contacted})"
             "RETURN p1, p2, r"
@@ -119,6 +118,37 @@ class App:
             logging.error("{query} raised an error: \n {exception".format(
                 query=query, exception=exception))
             raise
+
+    def find_all_outgoing_contacts(self, poi):
+        with self.driver.session() as session:
+            # Write transactions allow the driver to handle retries and transient errors
+            print("Contacting              Contacted                  Start time                End time")
+            print("------------------------------------------------------------------------------------------------")
+            result = session.read_transaction(
+                self._find_all_outgoing_contacts, poi)
+            for row in result:
+                print("{poi}                 {n}                   {rstart}       {rend}".format(
+                    poi=row['poi'], n=row['n'],
+                    rstart=self.get_datetime(row['r.start']),
+                    rend=self.get_datetime(row['r.end'])
+                ))
+
+    @staticmethod
+    def _find_all_outgoing_contacts(tx, poi):
+        query = (
+            "MATCH (poi:POI { name: $poi})-[r]->(n)"
+            "RETURN poi, r, n"
+        )
+        result = tx.run(query, poi=poi)
+        try:
+            return [{"poi": row["poi"]["name"], "n": row["n"]["name"], "r.start": row["r"]["start"],
+                     "r.end": row["r"]["end"]}
+                    for row in result]
+        except ServiceUnavailable as exception:
+            logging.error("{query} raised an error: \n {exception".format(
+                query=query, exception=exception))
+            raise
+
 
     def find_person(self, person_name):
         with self.driver.session() as session:
@@ -280,8 +310,9 @@ class CommandLine:
     @staticmethod
     def outgoing_channels(user_input):
         # 1.4: The operator can enter a query to find all outgoing channels from a POI.
-        arguments = user_input.split(' ')[1:]
-        print(arguments)
+        poi = user_input.split(' ')[1:]
+        print(f'find all outgoing channels from {poi[0]}')
+        app.find_all_outgoing_contacts(poi[0])
 
     @staticmethod
     def communicated_with(user_input):
@@ -340,6 +371,7 @@ if __name__ == "__main__":
     # app.find_person("Alice")
     # app.find_outgoing_contacts('Petter Nordblom', 'Stefan Karlsson')
     # app.create_poi('Thorild Sten')
+    # app.find_all_outgoing_contacts('Vesslan')
     cli = CommandLine(app)
     cli.run()
 
