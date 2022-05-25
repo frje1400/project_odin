@@ -149,8 +149,8 @@ class App:
     @staticmethod
     def _create_and_return_poi(tx, name):
         query = (
-            "CREATE (p:POI {name: '" + name + "' })"
-            "RETURN p.name AS name"
+                "CREATE (p:POI {name: '" + name + "' })"
+                                                  "RETURN p.name AS name"
         )
         result = tx.run(query, name=name)
         return [row["name"] for row in result]
@@ -190,9 +190,20 @@ class CommandLine:
                     self.state = CLIState.ADVANCED
                 elif user_input == '!basic':
                     self.state = CLIState.BASIC
+                elif user_input.startswith('!outgoing '):
+                    self.outgoing_channels(user_input)
+                elif user_input.startswith('!communicated_with '):
+                    self.communicated_with(user_input)
+                elif user_input.startswith('!comm_between '):
+                    self.communication_between(user_input)
+                elif user_input.startswith('!add_channel '):
+                    self.add_channel(user_input)
+                elif user_input.startswith('!direct_channels '):
+                    self.direct_channels(user_input)
+                elif user_input.startswith('!channels_date '):
+                    self.channels_date(user_input)
                 else:
-                    # Handle the "normal mode" commands.
-                    print(f'{user_input}')
+                    print(f'unknown command: {user_input}')
             elif self.state == CLIState.ADVANCED:
                 user_input = input('<advanced> ')
                 if user_input == '!q':
@@ -206,6 +217,43 @@ class CommandLine:
                         app.run_advanced_mode_query(user_input)
                     except CypherSyntaxError:
                         print(f"invalid query: {user_input}")
+
+    @staticmethod
+    def outgoing_channels(user_input):
+        # 5.1: The operator can enter a query to find all outgoing channels from a POI.
+        arguments = user_input.split(' ')[1:]
+        print(arguments)
+
+    @staticmethod
+    def communicated_with(user_input):
+        # 5.2 The operator can find all POIs that a particular POI has communicated with,
+        # with a configurable degree of separation.
+        poi, degrees = user_input.split(' ')[1:]
+        print(f'who has {poi} communicated with? degrees of separation: {degrees}')
+
+    @staticmethod
+    def communication_between(user_input):
+        # 5.3 The operator can enter POI X and POI Y as a query to see if there has been any CIs between them.
+        # The query returns the shortest path, including CI and intermediate POI’s.
+        poi1, poi2 = user_input.split(' ')[1:]
+        print(f'has {poi1} and {poi2} communicated?')
+
+    @staticmethod
+    def add_channel(user_input):
+        # 5.4 The operator can add a new CI between two existing POIs.
+        poi1, poi2, channel = user_input.split(' ')[1:]
+        print(f'adding {channel} between {poi1} and {poi2}')
+
+    @staticmethod
+    def direct_channels(user_input):
+        # 5.5 The operator can get all CIs between two directly communicating POIs.
+        poi1, poi2 = user_input.split(' ')[1:]
+        print(f'finding the direct channels between {poi1} and {poi2}')
+
+    @staticmethod
+    def channels_date(user_input):
+        date1, date2 = user_input.split(' ')[1:]
+        print(f'finding channels between {date1} and {date2}')
 
 
 if __name__ == "__main__":
