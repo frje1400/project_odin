@@ -196,8 +196,6 @@ class CommandLine:
                     self.update_poi(user_input)
                 elif user_input.startswith('!add_ci '):
                     self.add_ci(user_input)
-                elif user_input.startswith('!new_channel '):
-                    self.new_channel(user_input)
                 elif user_input.startswith('!outgoing '):
                     self.outgoing_channels(user_input)
                 elif user_input.startswith('!communicated_with '):
