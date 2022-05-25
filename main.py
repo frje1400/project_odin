@@ -266,11 +266,6 @@ class CommandLine:
                         print(f"invalid query: {user_input}")
 
     @staticmethod
-    def add_poi(user_input):
-        name, = user_input.split(' ')[1:]
-        print(f'adding {name} to database.')
-
-    @staticmethod
     def update_poi(user_input):
         # 1.2.
         # Don't know what data to extract from user input.
