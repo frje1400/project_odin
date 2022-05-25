@@ -188,6 +188,8 @@ class CommandLine:
                     self.state = CLIState.QUIT
                 elif user_input == '!adv':
                     self.state = CLIState.ADVANCED
+                elif user_input == '!basic':
+                    self.state = CLIState.BASIC
                 else:
                     # Handle the "normal mode" commands.
                     print(f'{user_input}')
@@ -197,6 +199,8 @@ class CommandLine:
                     self.state = CLIState.QUIT
                 elif user_input == '!basic':
                     self.state = CLIState.BASIC
+                elif user_input == '!adv':
+                    self.state = CLIState.ADVANCED
                 else:
                     try:
                         app.run_advanced_mode_query(user_input)
@@ -219,8 +223,8 @@ if __name__ == "__main__":
     app = App(uri, user, password)
     # app.create_friendship("Alice", "David")
     # app.find_person("Alice")
-    app.find_outgoing_contacts('Petter Nordblom', 'Stefan Karlsson')
-    app.create_poi('Thorild Sten')
+    # app.find_outgoing_contacts('Petter Nordblom', 'Stefan Karlsson')
+    # app.create_poi('Thorild Sten')
     cli = CommandLine(app)
     cli.run()
 
