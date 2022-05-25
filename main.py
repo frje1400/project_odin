@@ -85,34 +85,40 @@ class App:
         hour = int(dt_split[3])
         minute = int(dt_split[4])
 
-        dt = datetime.datetime(year, month, day, hour, minute)
+        dt = datetime(year, month, day, hour, minute)
         unixtime = time.mktime(dt.timetuple())
         return str(int(unixtime))
 
     def find_outgoing_contacts_between_x_and_y(self, contacting, contacted):
         with self.driver.session() as session:
             # Write transactions allow the driver to handle retries and transient errors
-            print("Contacting              Contacted                  Start time                End time")
-            print("------------------------------------------------------------------------------------------------")
+            print("Type         Contacting          Contacted           Start time              End time")
+            print("------------------------------------------------------------------------------------------------------------------")
             result = session.read_transaction(
                 self._find_outgoing_contacts_between_x_and_y, contacting, contacted)
+
             for row in result:
-                print("{p1}         {p2}            {rstart}       {rend}".format(
-                    p1=row['p1'], p2=row['p2'],
-                    rstart=self.get_datetime(row['r.start']),
-                    rend=self.get_datetime(row['r.end'])
+                print("{type}       {start_node}             {end_node}            {start_time}     {end_time}".format(
+                    type=row["type"], start_node=row["start_node"], end_node=row["end_node"],
+                    start_time=self.get_datetime(row['start_time']),
+                    end_time=self.get_datetime(row['end_time'])
                 ))
 
     @staticmethod
-    def _find_outgoing_contacts_between_x_and_y(tx, contacting, contacted):
+    def _find_outgoing_contacts_between_x_and_y(tx, p1, p2):
         query = (
-            "MATCH (p1:POI { name: $contacting})-[r]->(p2:POI {name: $contacted})"
-            "RETURN p1, p2, r"
+            "MATCH (p1:POI { name: $p1})-[r]-(p2:POI {name: $p2}) "
+            "RETURN r, startNode(r).name as start_node, endNode(r).name as end_node, TYPE(r) as type "
+            "ORDER BY r.start_time"
         )
-        result = tx.run(query, contacting=contacting, contacted=contacted)
+        result = tx.run(query, p1=p1, p2=p2)
+
         try:
-            return [{"p1": row["p1"]["name"], "p2": row["p2"]["name"], "r.start": row["r"]["start"],
-                     "r.end": row["r"]["end"]}
+            return [{"type": row["type"],
+                     "start_node": row["start_node"],
+                     "end_node": row["end_node"],
+                     "start_time": row["r"]["start_time"],
+                     "end_time": row["r"]["end_time"]}
                     for row in result]
         except ServiceUnavailable as exception:
             logging.error("{query} raised an error: \n {exception".format(
@@ -127,10 +133,10 @@ class App:
             result = session.read_transaction(
                 self._find_all_outgoing_contacts, poi)
             for row in result:
-                print("{poi}                 {n}                   {rstart}       {rend}".format(
+                print("{poi}                 {n}                   {rstart_time}       {rend_time}".format(
                     poi=row['poi'], n=row['n'],
-                    rstart=self.get_datetime(row['r.start']),
-                    rend=self.get_datetime(row['r.end'])
+                    rstart=self.get_datetime(row['r.start_time']),
+                    rend=self.get_datetime(row['r.end_time'])
                 ))
 
     @staticmethod
@@ -141,8 +147,8 @@ class App:
         )
         result = tx.run(query, poi=poi)
         try:
-            return [{"poi": row["poi"]["name"], "n": row["n"]["name"], "r.start": row["r"]["start"],
-                     "r.end": row["r"]["end"]}
+            return [{"poi": row["poi"]["name"], "n": row["n"]["name"], "r.start_time": row["r"]["start_time"],
+                     "r.end_time": row["r"]["end_time"]}
                     for row in result]
         except ServiceUnavailable as exception:
             logging.error("{query} raised an error: \n {exception".format(
@@ -186,12 +192,12 @@ class App:
         with self.driver.session() as session:
             result = session.write_transaction(self._add_ci, rel, contacting, contacted, start, end)
             for row in result:
-                print("Added relationship: ({contacting})-[:{rel} start: {rstart}, end: {rend}]->({contacted})".format(
+                print("Added relationship: ({contacting})-[:{rel} start_time: {rstart}, end_time: {rend}]->({contacted})".format(
                     contacting=row['contacting'],
                     rel=rel,
                     contacted=row['contacted'],
-                    rstart=row['ci.start'],
-                    rend=row['ci.end']
+                    rstart=row['ci.start_time'],
+                    rend=row['ci.end_time']
                 ))
 
     @staticmethod
@@ -199,14 +205,14 @@ class App:
         query = (
             "MATCH (contacting:POI {name: '" + contacting + "' }) "
             "MATCH (contacted:POI {name: '" + contacted + "'}) "
-            "MERGE (contacting)-[ci:" + relationship + " {start: " + start + ", end: " + end + "}]->(contacted) "
+            "MERGE (contacting)-[ci:" + relationship + " {start_time: " + start + ", end_time: " + end + "}]->(contacted) "
             "RETURN contacting, contacted, ci"
         )
         result = tx.run(query, contacting=contacting, contacted=contacted, relationship=relationship, start=start,
                         end=end)
 
         return [{"contacting": row["contacting"]["name"], "contacted": row["contacted"]["name"],
-                 "ci.start": row["ci"]["start"], "ci.end": row["ci"]["end"]}
+                 "ci.start_time": row["ci"]["start_time"], "ci.end_time": row["ci"]["end_time"]}
                 for row in result]
 
     def create_poi(self, name):
@@ -327,6 +333,7 @@ class CommandLine:
         # The query returns the shortest path, including CI and intermediate POI’s.
         poi1, poi2 = user_input.split(' ')[1:]
         print(f'has {poi1} and {poi2} communicated?')
+        app.find_outgoing_contacts_between_x_and_y(poi1, poi2)
 
     @staticmethod
     def add_channel(user_input):
