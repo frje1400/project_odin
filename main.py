@@ -192,14 +192,14 @@ class App:
                 query=query, exception=exception))
             raise
 
-    def create_poi(self, name):
+    def add_poi(self, name):
         with self.driver.session() as session:
-            result = session.write_transaction(self._create_and_return_poi, name)
+            result = session.write_transaction(self._add_poi, name)
             for row in result:
                 print("Created POI: {row}".format(row=row))
 
     @staticmethod
-    def _create_and_return_poi(tx, name):
+    def _add_poi(tx, name):
         query = (
                 "CREATE (p:POI {name: '" + name + "' })"
                 "RETURN p.name AS name"
@@ -466,7 +466,7 @@ class CommandLine:
     def add_poi(user_input):
         name = user_input.split(' ')[1:]
         print(f'adding poi {name}')
-        app.create_poi(name[0])
+        app.add_poi(name[0])
 
 
 if __name__ == "__main__":
