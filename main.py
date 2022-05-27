@@ -15,6 +15,7 @@ from neo4j.graph import Relationship
 
 
 class App:
+    channels = set()
     def __init__(self, uri, user, password):
         # Global thread-safe driver object. It's reused during the entire lifetime of the
         # project then destroyed when closing the application. If the driver object is destroyed
@@ -132,7 +133,7 @@ class App:
         with self.driver.session() as session:
             result = session.write_transaction(self._add_ci, rel, contacting, contacted, start, end)
             for row in result:
-                print("Added relationship: ({contacting})-[:{rel} start_time: {rstart}, end_time: {rend}]->({contacted})".format(
+                print("added ci: ({contacting})-[:{rel} start_time: {rstart}, end_time: {rend}]->({contacted})".format(
                     contacting=row['contacting'],
                     rel=rel,
                     contacted=row['contacted'],
@@ -282,10 +283,12 @@ class App:
             raise
 
     def update_poi(self, poi, info_key, info_value):
-
         with self.driver.session() as session:
             result = session.write_transaction(self._update_poi, poi, info_key, info_value)
-        print(result)
+        print(f'updated record of {poi}:')
+        for x in result:
+            for key, value in x["poi"].items():
+                print(key + ": " + value)
 
     @staticmethod
     def _update_poi(tx, poi, info_key, info_value):
@@ -304,15 +307,33 @@ class App:
                 query=query, exception=exception))
             raise
 
+    @staticmethod
+    def load_channels():
+        app.channels.clear()
+        f = open('channels', "r")
+        for line in f:
+            app.channels.add(line.replace("\n", ""))
+
+    @staticmethod
+    def add_channel(channel):
+        ch = channel.upper()
+        if app.channel_exists(channel):
+            return print("Channel already exists")
+        else:
+            f = open("channels", "a")
+            f.write(ch + "\n")
+            f.close()
+            app.load_channels()
+
+    @staticmethod
+    def channel_exists(channel):
+        if app.channels.__contains__(channel.upper()):
+            return True
+        else:
+            return False
+
     def run_advanced_mode_query(self, query):
         with self.driver.session() as session:
-            # An auto-commit transaction is a basic but limited form of transaction.
-            # Such a transaction consists of only one Cypher query and is not automatically
-            # retried on failure. Therefore, any error scenarios will need to be handled by
-            # the client application itself.
-            #
-            # Auto-commit transactions serve the following purposes:
-            #   simple use cases such as when learning Cypher or writing one-off scripts.
             res = session.run(Query(query))
             for r in res:
                 print(r)
@@ -331,63 +352,68 @@ class CommandLine:
 
     def run(self):
         while self.state != CLIState.QUIT:
-            if self.state == CLIState.BASIC:
-                user_input = input('<basic> ')
-                if user_input == '!q':
-                    self.state = CLIState.QUIT
-                elif user_input == '!adv':
-                    self.state = CLIState.ADVANCED
-                elif user_input == '!basic':
-                    self.state = CLIState.BASIC
-                elif user_input.startswith('!add_poi '):
-                    self.add_poi(user_input)
-                elif user_input.startswith('!update_poi '):
-                    self.update_poi(user_input)
-                elif user_input.startswith('!add_channel '):
-                    self.add_channel(user_input)
-                elif user_input.startswith('!outgoing '):
-                    self.outgoing_channels(user_input)
-                elif user_input.startswith('!communicated_with '):
-                    self.communicated_with(user_input)
-                elif user_input.startswith('!comm_between '):
-                    self.communication_between(user_input)
-                elif user_input.startswith('!add_ci '):
-                    self.add_ci(user_input)
-                elif user_input.startswith('!direct_channels '):
-                    self.direct_channels(user_input)
-                elif user_input.startswith('!channels_date '):
-                    self.channels_date(user_input)
-                elif user_input.startswith('!add_poi'):
-                    self.add_poi(user_input)
-                else:
-                    print(f'unknown command: {user_input}')
-            elif self.state == CLIState.ADVANCED:
-                user_input = input('<advanced> ')
-                if user_input == '!q':
-                    self.state = CLIState.QUIT
-                elif user_input == '!basic':
-                    self.state = CLIState.BASIC
-                elif user_input == '!adv':
-                    self.state = CLIState.ADVANCED
-                else:
-                    try:
-                        app.run_advanced_mode_query(user_input)
-                    except CypherSyntaxError:
-                        print(f"invalid query: {user_input}")
+            try:
+                if self.state == CLIState.BASIC:
+                    user_input = input('<basic> ')
+                    if user_input == '!q':
+                        self.state = CLIState.QUIT
+                    elif user_input == '!adv':
+                        self.state = CLIState.ADVANCED
+                    elif user_input == '!basic':
+                        self.state = CLIState.BASIC
+                    elif user_input.startswith('!add_poi '):
+                        self.add_poi(user_input)
+                    elif user_input.startswith('!update_poi '):
+                        self.update_poi(user_input)
+                    elif user_input.startswith('!add_channel '):
+                        self.add_channel(user_input)
+                    elif user_input.startswith('!outgoing '):
+                        self.outgoing_channels(user_input)
+                    elif user_input.startswith('!communicated_with '):
+                        self.communicated_with(user_input)
+                    elif user_input.startswith('!comm_between '):
+                        self.communication_between(user_input)
+                    elif user_input.startswith('!add_ci '):
+                        self.add_ci(user_input)
+                    elif user_input.startswith('!direct_channels '):
+                        self.direct_channels(user_input)
+                    elif user_input.startswith('!channels_date '):
+                        self.channels_date(user_input)
+                    elif user_input.startswith('!add_poi'):
+                        self.add_poi(user_input)
+                    else:
+                        print(f'unknown command: {user_input}')
+                elif self.state == CLIState.ADVANCED:
+                    user_input = input('<advanced> ')
+                    if user_input == '!q':
+                        self.state = CLIState.QUIT
+                    elif user_input == '!basic':
+                        self.state = CLIState.BASIC
+                    elif user_input == '!adv':
+                        self.state = CLIState.ADVANCED
+                    else:
+                        try:
+                            app.run_advanced_mode_query(user_input)
+                        except CypherSyntaxError:
+                            print(f"invalid query: {user_input}")
+            except Exception as f:
+                print(f)
+
 
     @staticmethod
-    def update_poi(user_input): #TODO
+    def update_poi(user_input):
         # 1.2.
         poi, info_key, info_value = user_input.split(' ')[1:]
         print(f'updating {poi} with key {info_key} and value {info_value}')
         app.update_poi(poi, info_key, info_value)
 
     @staticmethod
-    def add_channel(user_input): #TODO
+    def add_channel(user_input):
         # 1.3 The operator can define a new channel. New means of communication are continuously developed and adopted.
         # The database must be designed such that it can gracefully handle, for example, a new communication app.
         channel, = user_input.split(' ')[1:]
         print(f'adding {channel} to the database')
+        app.add_channel(channel)
 
     @staticmethod
     def outgoing_channels(user_input):
@@ -416,8 +442,11 @@ class CommandLine:
     def add_ci(user_input):
         # 1.7 The operator can add a new CI between two existing POIs.
         poi1, channel, poi2, start, end = user_input.split(' ')[1:]
-        print(f'adding {channel} between {poi1} and {poi2} with start time {start} and end time {end}')
-        app.add_ci(channel, poi1, poi2, start, end)
+        if app.channel_exists(channel):
+            print(f'adding {channel} between {poi1} and {poi2} with start time {start} and end time {end}')
+            app.add_ci(channel, poi1, poi2, start, end)
+        else:
+            print("specified channel does not exist, please add channel first (!add_channel).")
 
     @staticmethod
     def direct_channels(user_input):
@@ -453,6 +482,7 @@ if __name__ == "__main__":
 
     App.enable_log(logging.INFO, sys.stdout)
     app = App(uri, user, password)
+    app.load_channels()
     # app.create_friendship("Alice", "David")
     # app.find_person("Alice")
     # app.find_outgoing_contacts('Petter Nordblom', 'Stefan Karlsson')
