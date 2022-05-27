@@ -8,8 +8,10 @@ import os
 import re
 import time
 
+import neo4j
 from neo4j import GraphDatabase, Query
 from neo4j.exceptions import ServiceUnavailable, CypherSyntaxError
+from neo4j.graph import Relationship
 
 
 class App:
@@ -90,29 +92,33 @@ class App:
 
     def find_all_outgoing_contacts(self, poi):
         with self.driver.session() as session:
-            # Write transactions allow the driver to handle retries and transient errors
-            print("------------------------------------------------------------------------------------------------")
-            print("Contacting              Contacted                  Start time                End time")
-            print("------------------------------------------------------------------------------------------------")
+            print("------------------------------------------------------------------------------------------------------------------")
+            print("Type         Contacting          Contacted           Start time              End time")
+            print("------------------------------------------------------------------------------------------------------------------")
             result = session.read_transaction(
                 self._find_all_outgoing_contacts, poi)
+
             for row in result:
-                print("{poi}                 {n}                   {rstart_time}       {rend_time}".format(
-                    poi=row['poi'], n=row['n'],
-                    rstart=self.get_datetime(row['r.start_time']),
-                    rend=self.get_datetime(row['r.end_time'])
+                print("{type}       {start_node}            {end_node}             {start_time}     {end_time}".format(
+                    type=row["type"], start_node=row["start_node"], end_node=row["end_node"],
+                    start_time=self.get_datetime(row['start_time']),
+                    end_time=self.get_datetime(row['end_time'])
                 ))
 
     @staticmethod
     def _find_all_outgoing_contacts(tx, poi):
         query = (
             "MATCH (poi:POI { name: $poi})-[r]->(n)"
-            "RETURN poi, r, n"
+            "RETURN r, startNode(r).name as start_node, endNode(r).name as end_node, TYPE(r) as type "
+            "ORDER BY r.start_time"
         )
         result = tx.run(query, poi=poi)
         try:
-            return [{"poi": row["poi"]["name"], "n": row["n"]["name"], "r.start_time": row["r"]["start_time"],
-                     "r.end_time": row["r"]["end_time"]}
+            return [{"type": row["type"],
+                     "start_node": row["start_node"],
+                     "end_node": row["end_node"],
+                     "start_time": row["r"]["start_time"],
+                     "end_time": row["r"]["end_time"]}
                     for row in result]
         except ServiceUnavailable as exception:
             logging.error("{query} raised an error: \n {exception".format(
@@ -148,12 +154,6 @@ class App:
         return [{"contacting": row["contacting"]["name"], "contacted": row["contacted"]["name"],
                  "ci.start_time": row["ci"]["start_time"], "ci.end_time": row["ci"]["end_time"]}
                 for row in result]
-
-    def create_poi(self, name):
-        with self.driver.session() as session:
-            result = session.write_transaction(self._create_and_return_poi, name)
-            for row in result:
-                print("Created POI: {row}".format(row=row))
 
     def get_channels_date(self, from_date_time, to_date_time):
         from_date_time = App.get_unixtime(from_date_time)
@@ -191,14 +191,118 @@ class App:
                 query=query, exception=exception))
             raise
 
+    def create_poi(self, name):
+        with self.driver.session() as session:
+            result = session.write_transaction(self._create_and_return_poi, name)
+            for row in result:
+                print("Created POI: {row}".format(row=row))
+
     @staticmethod
     def _create_and_return_poi(tx, name):
         query = (
                 "CREATE (p:POI {name: '" + name + "' })"
-                                                  "RETURN p.name AS name"
+                "RETURN p.name AS name"
         )
         result = tx.run(query, name=name)
-        return [row["name"] for row in result]
+        try:
+            return [{"name": row["name"]}
+                for row in result]
+        except ServiceUnavailable as exception:
+            logging.error("{query} raised an error: \n {exception".format(
+                query=query, exception=exception))
+            raise
+
+    def communicated_with(self, poi, degrees):
+        with self.driver.session() as session:
+            result = session.read_transaction(self._communicated_with, poi, degrees)
+        marker = "(POI)---"
+        print("Length between")
+        index = 0
+        contacted = set()
+        for row in result:
+            if row["contacted"] in contacted:
+                continue
+            else:
+                contacted.add(row["contacted"])
+            length = int(row["length"])
+            print(str(row["length"]) + "          (" + str(poi) + ")---", end="")
+            for x in range(length-1):
+                print(marker, end="")
+            print("(" + row["contacted"] + ")")
+
+    @staticmethod
+    def _communicated_with(tx, poi, degrees):
+        query = (
+            "MATCH p = (poi:POI {name: '" + poi + "'})-[*.." + degrees + "]-(n:POI) "
+            "WHERE n.name <> '" + poi + "' "
+            "WITH relationships(p) as contacts, length(p) as length, n.name as contacted "
+            "RETURN DISTINCT contacts, length, contacted "
+            "ORDER BY length"
+        )
+        result = tx.run(query, poi=poi, degrees=degrees)
+        try:
+            return [{"contacts": row["contacts"],
+                     "length": row["length"],
+                     "contacted": row["contacted"]}
+                    for row in result]
+        except ServiceUnavailable as exception:
+            logging.error("{query} raised an error: \n {exception".format(
+                query=query, exception=exception))
+            raise
+
+    def communication_between(self, x, y):
+
+        with self.driver.session() as session:
+            path = session.read_transaction(self._communication_between, x, y)
+        print("the chain of relationships between " + x + " and " + y + ":")
+        for x in path:
+            for p in x["p"]:
+                if isinstance(p, dict):
+                    print("(" + p["name"] + ")", end="")
+                else:
+                    print("---[" + p + "]---", end="")
+
+        print("\n")
+
+    @staticmethod
+    def _communication_between(tx, x, y):
+        query = (
+            "MATCH (x:POI {name: '" + x + "'}), (y:POI {name: '" + y + "'}), "
+            "p = SHORTESTPATH((x)-[*]-(y)) "
+            "RETURN p"
+        )
+        result = tx.run(query, x=x, y=y)
+        record = result.data()
+
+        try:
+            return record
+        except ServiceUnavailable as exception:
+            logging.error("{query} raised an error: \n {exception".format(
+                query=query, exception=exception))
+            raise
+
+    def update_poi(self, poi, info_key, info_value):
+
+        with self.driver.session() as session:
+            result = session.write_transaction(self._update_poi, poi, info_key, info_value)
+        print(result)
+
+    @staticmethod
+    def _update_poi(tx, poi, info_key, info_value):
+        query = (
+            "MATCH (poi:POI {name: '" + poi + "'}) "
+            "SET poi." + info_key + " = '" + info_value + "' "
+            "RETURN poi"
+        )
+        result = tx.run(query, poi=poi, info_key=info_key, info_value=info_value)
+        record = result.data()
+
+        try:
+            return record
+        except ServiceUnavailable as exception:
+            logging.error("{query} raised an error: \n {exception".format(
+                query=query, exception=exception))
+            raise
 
     def run_advanced_mode_query(self, query):
         with self.driver.session() as session:
@@ -272,14 +376,16 @@ class CommandLine:
                         print(f"invalid query: {user_input}")
 
     @staticmethod
-    def update_poi(user_input):
+    def update_poi(user_input): #TODO
         # 1.2.
-        # Don't know what data to extract from user input.
-        pass
+        poi, info_key, info_value = user_input.split(' ')[1:]
+        print(f'updating {poi} with key {info_key} and value {info_value}')
+        app.update_poi(poi, info_key, info_value)
 
     @staticmethod
-    def add_channel(user_input):
-        # 1.3 The operator can enter a CI between operators
+    def add_channel(user_input): #TODO
+        # 1.3 The operator can define a new channel. New means of communication are continuously developed and adopted.
+        # The database must be designed such that it can gracefully handle, for example, a new communication app.
         channel, = user_input.split(' ')[1:]
         print(f'adding {channel} to the database')
 
@@ -296,6 +402,7 @@ class CommandLine:
         # with a configurable degree of separation.
         poi, degrees = user_input.split(' ')[1:]
         print(f'who has {poi} communicated with? degrees of separation: {degrees}')
+        app.communicated_with(poi, degrees)
 
     @staticmethod
     def communication_between(user_input):
@@ -303,6 +410,7 @@ class CommandLine:
         # The query returns the shortest path, including CI and intermediate POI’s.
         poi1, poi2 = user_input.split(' ')[1:]
         print(f'has {poi1} and {poi2} communicated?')
+        app.communication_between(poi1, poi2)
 
     @staticmethod
     def add_ci(user_input):
