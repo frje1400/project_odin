@@ -379,8 +379,6 @@ class CommandLine:
                         self.direct_channels(user_input)
                     elif user_input.startswith('!channels_date '):
                         self.channels_date(user_input)
-                    elif user_input.startswith('!add_poi'):
-                        self.add_poi(user_input)
                     else:
                         print(f'unknown command: {user_input}')
                 elif self.state == CLIState.ADVANCED:
